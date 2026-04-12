@@ -102,6 +102,8 @@ final class APIClient {
         settings.baseURL.appendingPathComponent("/receipt/\(receiptId)/image")
     }
 
+    var authToken: String? { settings.bearerToken }
+
     func uploadReceipt(imageData: Data, filename: String, mimeType: String = "image/jpeg", notes: String? = nil) async throws -> UploadResponse {
         var req = try request("/receipt", method: "POST")
         let boundary = "Boundary-\(UUID().uuidString)"

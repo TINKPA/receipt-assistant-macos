@@ -3,86 +3,35 @@ import UniformTypeIdentifiers
 import AppKit
 
 struct AddTransactionSheet: View {
-    let client: APIClient
-    @EnvironmentObject var store: ReceiptStore
+    @EnvironmentObject var uploads: UploadService
     @Environment(\.dismiss) var dismiss
-    @StateObject private var upload: UploadManager
     @State private var isTargeted = false
     @State private var notes: String = ""
-
-    init(client: APIClient, store: ReceiptStore) {
-        self.client = client
-        _upload = StateObject(wrappedValue: UploadManager(client: client, store: store))
-    }
 
     var body: some View {
         VStack(spacing: 16) {
             Text("Upload Receipt").font(.title2.weight(.semibold))
-            content
+
+            dropZone
+
             TextField("Notes (optional)", text: $notes)
                 .textFieldStyle(.roundedBorder)
-                .disabled(!canEdit)
+
+            Text("Processing runs in the background — you can keep working.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             HStack {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                if case .done = upload.state {
-                    Button("Done") { dismiss() }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
-                } else {
-                    Button("Choose File…") { pickFile() }
-                        .disabled(!canEdit)
-                }
+                Button("Choose File…") { pickFile() }
+                    .buttonStyle(.borderedProminent)
             }
         }
         .padding(24)
-        .frame(width: 520, height: 440)
-        .onAppear {
-            upload.objectWillChange.send()
-        }
-    }
-
-    private var canEdit: Bool {
-        if case .idle = upload.state { return true }
-        if case .failed = upload.state { return true }
-        return false
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch upload.state {
-        case .idle, .failed:
-            dropZone
-        case .uploading:
-            processingView(title: "Uploading…")
-        case .queued:
-            processingView(title: "Extracting with Claude…")
-        case .done(let r):
-            VStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.green)
-                Text(r.merchant).font(.title3.weight(.semibold))
-                Text(r.total.currency(r.currency)).font(.title2.weight(.bold))
-                Text(r.category.displayName).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 200)
-        }
-        if case .failed(let msg) = upload.state {
-            Text(msg).foregroundStyle(.red).font(.caption)
-        }
-    }
-
-    @ViewBuilder
-    private func processingView(title: String) -> some View {
-        VStack(spacing: 10) {
-            ProgressView()
-            Text(title).foregroundStyle(.secondary)
-            Text("This can take up to 2 minutes for complex receipts.")
-                .font(.caption).foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 200)
+        .frame(width: 520, height: 420)
     }
 
     private var dropZone: some View {
@@ -94,7 +43,7 @@ struct AddTransactionSheet: View {
                 Image(systemName: "arrow.up.doc.on.clipboard")
                     .font(.system(size: 40, weight: .light))
                 Text("Drop an image here").font(.headline)
-                Text("JPG, PNG, HEIC — up to 20 MB")
+                Text("JPG, PNG, HEIC — auto-compressed to ~1 MB")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -103,7 +52,7 @@ struct AddTransactionSheet: View {
             guard let p = providers.first else { return false }
             _ = p.loadObject(ofClass: URL.self) { url, _ in
                 guard let url else { return }
-                Task { @MainActor in await upload.upload(fileURL: url, notes: notes) }
+                Task { @MainActor in submit(url: url) }
             }
             return true
         }
@@ -111,11 +60,17 @@ struct AddTransactionSheet: View {
 
     private func pickFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.jpeg, .png, .heic]
+        panel.allowedContentTypes = [.jpeg, .png, .heic, .image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
-            Task { await upload.upload(fileURL: url, notes: notes) }
+            submit(url: url)
         }
+    }
+
+    private func submit(url: URL) {
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        uploads.submit(fileURL: url, notes: trimmed.isEmpty ? nil : trimmed)
+        dismiss()
     }
 }

@@ -23,6 +23,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 struct RootView: View {
     @EnvironmentObject var store: ReceiptStore
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var uploads: UploadService
     @State private var selection: SidebarItem? = .dashboard
     @State private var showUpload = false
     @State private var client: APIClient?
@@ -59,19 +60,23 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .environment(\.apiClient, client)
+        .overlay(alignment: .bottomTrailing) {
+            UploadToastStack()
+                .environmentObject(uploads)
+        }
         .task {
             if client == nil {
                 let c = APIClient(settings: settings)
                 client = c
                 store.attach(c)
+                uploads.attach(client: c, store: store)
                 await store.refreshAll()
             }
         }
         .sheet(isPresented: $showUpload) {
-            if let client {
-                AddTransactionSheet(client: client, store: store)
-                    .environmentObject(store)
-            }
+            AddTransactionSheet()
+                .environmentObject(uploads)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showUploadSheet)) { _ in
             showUpload = true

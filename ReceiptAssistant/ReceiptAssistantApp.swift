@@ -4,12 +4,14 @@ import SwiftUI
 struct ReceiptAssistantApp: App {
     @StateObject private var store = ReceiptStore()
     @StateObject private var settings = AppSettings()
+    @StateObject private var uploads = UploadService()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(store)
                 .environmentObject(settings)
+                .environmentObject(uploads)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 700)
                 .task { await store.refreshAll() }

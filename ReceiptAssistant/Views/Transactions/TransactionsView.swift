@@ -97,6 +97,7 @@ struct ReceiptDetailSheet: View {
     let receipt: Receipt
     @EnvironmentObject var store: ReceiptStore
     @Environment(\.dismiss) var dismiss
+    @Environment(\.apiClient) var apiClient
 
     var body: some View {
         VStack(spacing: 0) {
@@ -114,6 +115,16 @@ struct ReceiptDetailSheet: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    AuthedAsyncImage(
+                        url: apiClient?.imageURL(for: receipt.id),
+                        token: apiClient?.authToken
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(maxHeight: 320)
+                    .background(Color.black.opacity(0.25),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.bottom, 4)
+
                     row("Category", receipt.category.displayName)
                     row("Currency", receipt.currency)
                     if let pm = receipt.paymentMethod { row("Payment", pm) }
