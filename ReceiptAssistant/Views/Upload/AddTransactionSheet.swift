@@ -55,13 +55,9 @@ struct AddTransactionSheet: View {
         case .idle, .failed:
             dropZone
         case .uploading:
-            processingView(title: "Uploading…", quick: nil)
+            processingView(title: "Uploading…")
         case .queued:
-            processingView(title: "Queued…", quick: nil)
-        case .quickPreview(let q):
-            processingView(title: "Quick preview — extracting details…", quick: q)
-        case .processingFull(let q):
-            processingView(title: "Extracting items with Claude…", quick: q)
+            processingView(title: "Extracting with Claude…")
         case .done(let r):
             VStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
@@ -79,23 +75,12 @@ struct AddTransactionSheet: View {
     }
 
     @ViewBuilder
-    private func processingView(title: String, quick: QuickResult?) -> some View {
+    private func processingView(title: String) -> some View {
         VStack(spacing: 10) {
             ProgressView()
             Text(title).foregroundStyle(.secondary)
-            if let q = quick {
-                VStack(spacing: 2) {
-                    Text(q.merchant ?? "—").font(.title3.weight(.semibold))
-                    if let t = q.total {
-                        Text(t.currency(q.currency ?? "USD"))
-                            .font(.title2.weight(.bold))
-                    }
-                    if let d = q.date, !d.isEmpty {
-                        Text(d).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.top, 6)
-            }
+            Text("This can take up to 2 minutes for complex receipts.")
+                .font(.caption).foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 200)
     }

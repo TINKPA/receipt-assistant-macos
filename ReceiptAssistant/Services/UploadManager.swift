@@ -9,8 +9,6 @@ final class UploadManager: ObservableObject {
         case idle
         case uploading
         case queued
-        case quickPreview(QuickResult)
-        case processingFull(QuickResult)
         case done(Receipt)
         case failed(String)
     }
@@ -44,10 +42,6 @@ final class UploadManager: ObservableObject {
             switch job.status {
             case "queued":
                 state = .queued
-            case "quick_done":
-                if let q = job.quickResult { state = .quickPreview(q) }
-            case "processing_full":
-                if let q = job.quickResult { state = .processingFull(q) }
             case "done":
                 let r = try await client.getReceipt(receiptId)
                 state = .done(r)

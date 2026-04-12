@@ -5,21 +5,8 @@ struct JobStatus: Codable, Hashable {
     let receiptId: String?
     let status: String
     let error: String?
-    let quickResult: QuickResult?
-
-    enum CodingKeys: String, CodingKey {
-        case jobId, receiptId, status, error, quickResult
-    }
 
     var isTerminal: Bool { status == "done" || status == "error" }
-    var hasQuickPreview: Bool { status == "quick_done" || status == "processing_full" || status == "done" }
-}
-
-struct QuickResult: Codable, Hashable {
-    let merchant: String?
-    let date: String?
-    let total: Double?
-    let currency: String?
 }
 
 struct UploadResponse: Codable {
