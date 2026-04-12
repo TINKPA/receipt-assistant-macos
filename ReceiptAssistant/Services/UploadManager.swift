@@ -8,7 +8,9 @@ final class UploadManager: ObservableObject {
     enum State: Equatable {
         case idle
         case uploading
-        case processing(Receipt?)
+        case queued
+        case quickPreview(QuickResult)
+        case processingFull(QuickResult)
         case done(Receipt)
         case failed(String)
     }
@@ -28,7 +30,7 @@ final class UploadManager: ObservableObject {
         do {
             let (data, filename, mime) = try Self.prepare(url: fileURL)
             let resp = try await client.uploadReceipt(imageData: data, filename: filename, mimeType: mime, notes: notes)
-            state = .processing(nil)
+            state = .queued
             try await poll(jobId: resp.jobId, receiptId: resp.receiptId)
         } catch {
             state = .failed((error as? LocalizedError)?.errorDescription ?? "\(error)")
@@ -39,17 +41,23 @@ final class UploadManager: ObservableObject {
         while true {
             try await Task.sleep(nanoseconds: 2_000_000_000)
             let job = try await client.job(jobId)
-            if let r = try? await client.getReceipt(receiptId) {
-                state = .processing(r)
-            }
-            if job.status == "done" {
+            switch job.status {
+            case "queued":
+                state = .queued
+            case "quick_done":
+                if let q = job.quickResult { state = .quickPreview(q) }
+            case "processing_full":
+                if let q = job.quickResult { state = .processingFull(q) }
+            case "done":
                 let r = try await client.getReceipt(receiptId)
                 state = .done(r)
                 await store.refreshAll()
                 return
-            } else if job.status == "error" {
+            case "error":
                 state = .failed(job.error ?? "Processing failed")
                 return
+            default:
+                break
             }
         }
     }
