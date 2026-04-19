@@ -26,7 +26,15 @@ Or from CLI: `xcodebuild -scheme ReceiptAssistant build`.
 The macOS app talks to the backend via two parallel paths:
 
 - **Hand-written**: `Networking/APIClient.swift` (`URLSession` + custom `Codable` models in `Models/`). Currently the production path used by all views.
-- **Generated**: Apple's [`swift-openapi-generator`](https://github.com/apple/swift-openapi-generator) build-tool plugin reads `Networking/Generated/openapi.json` (a copy of the backend's spec) and produces `Client.swift` + `Types.swift` at build time. The smoke test in `Networking/GeneratedClientSmokeTest.swift` shows how to use it.
+- **Generated**: Apple's [`swift-openapi-generator`](https://github.com/apple/swift-openapi-generator) build-tool plugin reads `Networking/Generated/openapi.json` (a copy of the backend's spec) and produces `Client.swift` + `Types.swift` at build time. The smoke test in `Networking/GeneratedClientSmokeTest.swift` shows how to use it. Run it from CLI:
+
+  ```bash
+  xcodebuild -scheme ReceiptAssistant build
+  RUN_SMOKE_TEST=1 \
+    ~/Library/Developer/Xcode/DerivedData/ReceiptAssistant-*/Build/Products/Debug/ReceiptAssistant.app/Contents/MacOS/ReceiptAssistant
+  # → [smoke] /health → service=receipt-assistant version=1.0.0
+  # → [smoke] /receipts → got N receipts
+  ```
 
 Goal: incrementally migrate `APIClient.swift` callsites onto the generated client so the macOS app picks up backend API changes via codegen instead of hand-edited Swift.
 
