@@ -13,12 +13,30 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
+packages:
+  swift-openapi-runtime:
+    url: https://github.com/apple/swift-openapi-runtime
+    from: 1.5.0
+  swift-openapi-urlsession:
+    url: https://github.com/apple/swift-openapi-urlsession
+    from: 1.0.0
+  swift-openapi-generator:
+    url: https://github.com/apple/swift-openapi-generator
+    from: 1.0.0
 targets:
   ReceiptAssistant:
     type: application
     platform: macOS
     sources:
       - path: ReceiptAssistant
+    dependencies:
+      - package: swift-openapi-runtime
+        product: OpenAPIRuntime
+      - package: swift-openapi-urlsession
+        product: OpenAPIURLSession
+    buildToolPlugins:
+      - plugin: OpenAPIGenerator
+        package: swift-openapi-generator
     info:
       path: ReceiptAssistant/Info.plist
       properties:
