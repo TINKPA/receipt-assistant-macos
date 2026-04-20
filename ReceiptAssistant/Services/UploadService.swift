@@ -1,3 +1,18 @@
+//
+//  UploadService.swift
+//
+//  Async upload pipeline against the v1 ingest API:
+//      submit(fileURL) →  POST /v1/ingest/batch (one-file batch)
+//                      →  poll GET /v1/ingests/{id} until terminal
+//      done           =  ingest classified + extracted; produced docId
+//                        and possibly a draft transactionId surface in
+//                        the toast for review
+//
+//  The old single-receipt receiptId is gone — what we now have is a
+//  triple (batchId, ingestId, optional documentId). For the menu-bar
+//  drop UX we treat a "single-file batch" as the unit of work.
+//
+
 import Foundation
 import AppKit
 import ImageIO
@@ -8,13 +23,13 @@ final class UploadService: ObservableObject {
     enum JobState: Equatable {
         case uploading
         case processing
-        case done(Receipt)
+        case done(documentId: String?, transactionId: String?)
         case failed(String)
     }
 
     struct Job: Identifiable, Equatable {
-        let id: String
-        var receiptId: String
+        let id: String              // ingestId once known; temp UUID before
+        var batchId: String
         var filename: String
         var state: JobState
         var startedAt: Date
@@ -26,8 +41,8 @@ final class UploadService: ObservableObject {
     private var store: ReceiptStore?
     private var pollingTask: Task<Void, Never>?
 
-    private static let persistKey = "UploadService.pendingJobs.v1"
-    private static let pollInterval: UInt64 = 5_000_000_000
+    private static let persistKey = "UploadService.pendingJobs.v2"
+    private static let pollInterval: UInt64 = 3_000_000_000
 
     func attach(client: APIClient, store: ReceiptStore) {
         self.client = client
@@ -38,11 +53,12 @@ final class UploadService: ObservableObject {
 
     // MARK: - Submit
 
-    func submit(fileURL: URL, notes: String?) {
+    func submit(fileURL: URL, notes: String? = nil) {
         guard let client else { return }
         let tempId = "temp-" + UUID().uuidString
         let filename = fileURL.lastPathComponent
-        let placeholder = Job(id: tempId, receiptId: "", filename: filename,
+        let placeholder = Job(id: tempId, batchId: "",
+                              filename: filename,
                               state: .uploading, startedAt: Date())
         jobs.insert(placeholder, at: 0)
 
@@ -50,13 +66,20 @@ final class UploadService: ObservableObject {
             guard let self else { return }
             do {
                 let (data, fname, mime) = try UploadService.prepareImage(url: fileURL)
-                let resp = try await client.uploadReceipt(
-                    imageData: data, filename: fname, mimeType: mime, notes: notes
+                let resp = try await client.uploadOne(
+                    imageData: data, filename: fname, mimeType: mime
                 )
+                guard let item = resp.items.first else {
+                    throw APIError.http(0, "Empty batch response")
+                }
                 if let idx = self.jobs.firstIndex(where: { $0.id == tempId }) {
-                    self.jobs[idx] = Job(id: resp.jobId, receiptId: resp.receiptId,
-                                         filename: filename, state: .processing,
-                                         startedAt: Date())
+                    self.jobs[idx] = Job(
+                        id: item.ingestId,
+                        batchId: resp.batchId,
+                        filename: filename,
+                        state: .processing,
+                        startedAt: Date()
+                    )
                 }
                 self.persist()
                 self.startPollingIfNeeded()
@@ -112,25 +135,27 @@ final class UploadService: ObservableObject {
         var didFinish = false
         for job in active {
             do {
-                let status = try await client.job(job.id)
-                switch status.status {
-                case "done":
-                    let r = try await client.getReceipt(job.receiptId)
+                let ingest = try await client.getIngest(job.id)
+                switch ingest.status {
+                case .done:
+                    let docId = ingest.produced?.documentIds?.first
+                    let txId = ingest.produced?.transactionIds?.first
                     if let idx = jobs.firstIndex(where: { $0.id == job.id }) {
-                        jobs[idx].state = .done(r)
+                        jobs[idx].state = .done(documentId: docId, transactionId: txId)
                     }
                     didFinish = true
-                    scheduleAutoDismiss(jobId: job.id, delay: 6)
-                case "error":
+                    scheduleAutoDismiss(jobId: job.id, delay: 8)
+                case .error, .unsupported:
                     if let idx = jobs.firstIndex(where: { $0.id == job.id }) {
-                        jobs[idx].state = .failed(status.error ?? "Processing failed")
+                        let msg = ingest.error ?? "Extraction failed"
+                        jobs[idx].state = .failed(msg)
                     }
                     didFinish = true
-                default:
+                case .queued, .processing:
                     break
                 }
             } catch {
-                // transient — keep trying next tick
+                // Transient — try again next tick
             }
         }
         if didFinish {
@@ -150,15 +175,15 @@ final class UploadService: ObservableObject {
     // MARK: - Persistence (survives app relaunch)
 
     private struct Persisted: Codable {
-        let jobId: String
-        let receiptId: String
+        let ingestId: String
+        let batchId: String
         let filename: String
     }
 
     private func persist() {
         let pending: [Persisted] = jobs.compactMap { j in
             guard case .processing = j.state else { return nil }
-            return Persisted(jobId: j.id, receiptId: j.receiptId, filename: j.filename)
+            return Persisted(ingestId: j.id, batchId: j.batchId, filename: j.filename)
         }
         let data = (try? JSONEncoder().encode(pending)) ?? Data()
         UserDefaults.standard.set(data, forKey: Self.persistKey)
@@ -168,21 +193,20 @@ final class UploadService: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: Self.persistKey),
               let items = try? JSONDecoder().decode([Persisted].self, from: data) else { return }
         let resumed = items.map {
-            Job(id: $0.jobId, receiptId: $0.receiptId, filename: $0.filename,
+            Job(id: $0.ingestId, batchId: $0.batchId, filename: $0.filename,
                 state: .processing, startedAt: Date())
         }
-        // Merge, avoiding duplicates
         for j in resumed where !jobs.contains(where: { $0.id == j.id }) {
             jobs.append(j)
         }
     }
 
-    // MARK: - Image preparation (compression, HEIC → JPEG)
+    // MARK: - Image preparation (HEIC/PNG/etc → JPEG)
 
     static func prepareImage(url: URL) throws -> (Data, String, String) {
         let raw = try Data(contentsOf: url)
         guard let src = CGImageSourceCreateWithData(raw as CFData, nil) else {
-            throw APIError.badResponse(0, "Cannot read image")
+            throw APIError.http(0, "Cannot read image")
         }
         let opts: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -190,19 +214,19 @@ final class UploadService: ObservableObject {
             kCGImageSourceCreateThumbnailWithTransform: true,
         ]
         guard let img = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else {
-            throw APIError.badResponse(0, "Cannot decode image")
+            throw APIError.http(0, "Cannot decode image")
         }
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(
             out, UTType.jpeg.identifier as CFString, 1, nil
         ) else {
-            throw APIError.badResponse(0, "Cannot create JPEG encoder")
+            throw APIError.http(0, "Cannot create JPEG encoder")
         }
         CGImageDestinationAddImage(dest, img, [
             kCGImageDestinationLossyCompressionQuality: 0.85
         ] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else {
-            throw APIError.badResponse(0, "JPEG encode failed")
+            throw APIError.http(0, "JPEG encode failed")
         }
         let base = url.deletingPathExtension().lastPathComponent
         return (out as Data, base + ".jpg", "image/jpeg")

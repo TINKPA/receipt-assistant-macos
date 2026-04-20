@@ -35,22 +35,21 @@ func smokeTestGeneratedClient(baseURL: URL = URL(string: "http://localhost:3000"
             print("[smoke] /health → undocumented status \(status)")
         }
 
-        // 2. /receipts — exercises Components.Schemas.Receipt decoding
-        //    against real Postgres data. Catches snake_case / number-as-string
-        //    / required-field mismatches early.
-        let receipts = try await client.getReceipts(.init(query: .init(limit: 3)))
-        switch receipts {
+        // 2. /v1/transactions — exercises Components.Schemas.Transaction
+        //    decoding against real Postgres data. Catches snake_case /
+        //    decimal / required-field mismatches early.
+        let txs = try await client.getV1Transactions(.init(query: .init(limit: 3)))
+        switch txs {
         case .ok(let ok):
-            let list = try ok.body.json
-            print("[smoke] /receipts → got \(list.count) receipts")
-            for r in list {
-                print("  - \(r.id) \(r.merchant) \(r.date) total=\(r.total)")
+            switch ok.body {
+            case .json(let payload):
+                print("[smoke] /v1/transactions → got \(payload.items.count) txns")
+                for t in payload.items {
+                    print("  - \(t.id) payee=\(t.payee ?? "?") on=\(t.occurredOn) status=\(t.status.rawValue) postings=\(t.postings.count)")
+                }
             }
-        case .badRequest(let bad):
-            let body = try bad.body.json
-            print("[smoke] /receipts → 400 \(body.issues)")
         case .undocumented(let status, _):
-            print("[smoke] /receipts → undocumented status \(status)")
+            print("[smoke] /v1/transactions → undocumented status \(status)")
         }
     } catch {
         print("[smoke] FAILED: \(error)")

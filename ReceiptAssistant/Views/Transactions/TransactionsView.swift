@@ -2,37 +2,51 @@ import SwiftUI
 
 struct TransactionsView: View {
     @EnvironmentObject var store: ReceiptStore
-    @State private var categoryFilter: Category? = nil
-    @State private var selected: Receipt?
+    @State private var search: String = ""
+    @State private var selectedId: String?
 
-    var filtered: [Receipt] {
-        guard let c = categoryFilter else { return store.receipts }
-        return store.receipts.filter { $0.category == c }
+    var filtered: [Transaction] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return store.transactions }
+        return store.transactions.filter {
+            ($0.payee ?? "").lowercased().contains(q) ||
+            ($0.narration ?? "").lowercased().contains(q)
+        }
+    }
+
+    private var selectedTxn: Transaction? {
+        guard let id = selectedId else { return nil }
+        return store.transactions.first { $0.id == id }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             filterBar
-            if store.isLoading && store.receipts.isEmpty {
+            if store.isLoading && store.transactions.isEmpty {
                 LoadingView()
             } else if filtered.isEmpty {
                 EmptyStateView(symbol: "doc.text.magnifyingglass",
                                title: "No transactions",
                                subtitle: "Upload a receipt to get started.")
             } else {
-                List(filtered, selection: $selected) { r in
-                    TransactionRow(receipt: r)
+                List(filtered, id: \.id, selection: $selectedId) { t in
+                    TransactionRow(txn: t)
                         .contentShape(Rectangle())
-                        .onTapGesture { selected = r }
+                        .onTapGesture { selectedId = t.id }
                 }
                 .listStyle(.inset)
             }
         }
         .navigationTitle("Transactions")
-        .sheet(item: $selected) { r in
-            ReceiptDetailSheet(receipt: r)
+        .sheet(isPresented: Binding(
+            get: { selectedTxn != nil },
+            set: { if !$0 { selectedId = nil } }
+        )) {
+            if let t = selectedTxn {
+                TransactionDetailSheet(txn: t)
+            }
         }
-        .task { await store.refreshReceipts() }
+        .task { await store.refreshTransactions() }
         .toolbar {
             ToolbarItem {
                 Button {
@@ -46,14 +60,9 @@ struct TransactionsView: View {
 
     private var filterBar: some View {
         HStack {
-            Picker("Category", selection: $categoryFilter) {
-                Text("All").tag(Category?.none)
-                ForEach(Category.allCases) { c in
-                    Text(c.displayName).tag(Category?.some(c))
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(width: 200)
+            TextField("Search payee / memo…", text: $search)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 280)
             Spacer()
             Text("\(filtered.count) items").foregroundStyle(.secondary).font(.caption)
         }
@@ -62,20 +71,23 @@ struct TransactionsView: View {
 }
 
 struct TransactionRow: View {
-    let receipt: Receipt
+    let txn: Transaction
 
     var body: some View {
         HStack(spacing: 12) {
-            CategoryIcon(category: receipt.category)
+            CategoryIcon(key: nil)
             VStack(alignment: .leading, spacing: 2) {
-                Text(receipt.merchant).font(.body.weight(.medium))
-                Text(receipt.category.displayName).font(.caption).foregroundStyle(.secondary)
+                Text(txn.displayPayee).font(.body.weight(.medium))
+                if let n = txn.narration, !n.isEmpty {
+                    Text(n).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text(receipt.total.currency(receipt.currency))
+                Text(txn.headlineAmount.currency(txn.primaryCurrency))
                     .font(.body.weight(.semibold))
-                Text(receipt.date).font(.caption).foregroundStyle(.secondary)
+                Text(txn.displayDate).font(.caption).foregroundStyle(.secondary)
             }
             statusBadge
         }
@@ -84,71 +96,74 @@ struct TransactionRow: View {
 
     private var statusBadge: some View {
         let (text, tint): (String, Color) = {
-            if receipt.status == "processing" { return ("Processing", .orange) }
-            if receipt.status == "error" { return ("Error", .red) }
-            if let c = receipt.confidenceScore, c < 0.7 { return ("Pending", .yellow) }
-            return ("Verified", .green)
+            switch txn.status {
+            case .draft: return ("Draft", .yellow)
+            case .posted: return ("Posted", .green)
+            case .reconciled: return ("Reconciled", .blue)
+            case .voided: return ("Voided", .gray)
+            case .error: return ("Error", .red)
+            }
         }()
         return StatusBadge(text: text, tint: tint)
     }
 }
 
-struct ReceiptDetailSheet: View {
-    let receipt: Receipt
+struct TransactionDetailSheet: View {
+    let txn: Transaction
     @EnvironmentObject var store: ReceiptStore
     @Environment(\.dismiss) var dismiss
-    @Environment(\.apiClient) var apiClient
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                CategoryIcon(category: receipt.category, size: 44)
+                CategoryIcon(key: nil, size: 44)
                 VStack(alignment: .leading) {
-                    Text(receipt.merchant).font(.title2.weight(.semibold))
-                    Text(receipt.date).foregroundStyle(.secondary)
+                    Text(txn.displayPayee).font(.title2.weight(.semibold))
+                    Text(txn.displayDate).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(receipt.total.currency(receipt.currency))
+                Text(txn.headlineAmount.currency(txn.primaryCurrency))
                     .font(.title.weight(.bold))
             }
             .padding()
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    AuthedAsyncImage(
-                        url: apiClient?.imageURL(for: receipt.id),
-                        token: apiClient?.authToken
-                    )
-                    .frame(maxWidth: .infinity)
-                    .frame(maxHeight: 320)
-                    .background(Color.black.opacity(0.25),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .padding(.bottom, 4)
-
-                    row("Category", receipt.category.displayName)
-                    row("Currency", receipt.currency)
-                    if let pm = receipt.paymentMethod { row("Payment", pm) }
-                    if let t = receipt.tax { row("Tax", t.currency(receipt.currency)) }
-                    if let t = receipt.tip { row("Tip", t.currency(receipt.currency)) }
-                    row("Status", receipt.status)
-                    if let conf = receipt.confidenceScore {
-                        row("Confidence", String(format: "%.0f%%", conf * 100))
-                    }
-                    if let notes = receipt.notes {
+                    row("Status", txn.status.rawValue)
+                    row("Currency", txn.primaryCurrency)
+                    row("Version", "\(txn.version)")
+                    if let narration = txn.narration {
                         Divider()
-                        Text("Notes").font(.headline)
-                        Text(notes).foregroundStyle(.secondary)
+                        Text("Narration").font(.headline)
+                        Text(narration).foregroundStyle(.secondary)
                     }
-                    if let items = receipt.items, !items.isEmpty {
+                    Divider()
+                    Text("Postings (\(txn.postings.count))").font(.headline)
+                    ForEach(txn.postings, id: \.id) { p in
+                        HStack {
+                            Text(p.accountId)
+                                .font(.caption.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Text(p.amountMinor.currencyFromMinor(p.currency))
+                                .foregroundStyle(p.amountMinor < 0 ? .red : .green)
+                        }
+                        if let memo = p.memo {
+                            Text(memo).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    if !txn.documents.isEmpty {
                         Divider()
-                        Text("Items").font(.headline)
-                        ForEach(items) { it in
+                        Text("Documents (\(txn.documents.count))").font(.headline)
+                        ForEach(txn.documents, id: \.id) { d in
                             HStack {
-                                Text(it.name)
+                                Text(d.kind).font(.caption.weight(.semibold))
                                 Spacer()
-                                if let tp = it.totalPrice {
-                                    Text(tp.currency(receipt.currency)).foregroundStyle(.secondary)
-                                }
+                                Text(d.id)
+                                    .font(.caption.monospaced())
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
                         }
                     }
@@ -156,12 +171,6 @@ struct ReceiptDetailSheet: View {
                 .padding()
             }
             HStack {
-                Button(role: .destructive) {
-                    Task {
-                        await store.delete(receipt.id)
-                        dismiss()
-                    }
-                } label: { Label("Delete", systemImage: "trash") }
                 Spacer()
                 Button("Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)

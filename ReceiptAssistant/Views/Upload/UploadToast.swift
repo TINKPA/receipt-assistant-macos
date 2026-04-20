@@ -82,7 +82,7 @@ struct UploadToastCard: View {
         switch job.state {
         case .uploading: return "Uploading receipt…"
         case .processing: return "Extracting with Claude…"
-        case .done(let r): return r.merchant
+        case .done(_, let txId): return txId == nil ? "Document ingested" : "Transaction created"
         case .failed: return "Upload failed"
         }
     }
@@ -91,8 +91,10 @@ struct UploadToastCard: View {
         switch job.state {
         case .uploading, .processing:
             return job.filename
-        case .done(let r):
-            return "\(r.total.currency(r.currency)) · \(r.category.displayName)"
+        case .done(let docId, let txId):
+            if let txId { return "tx: \(txId.prefix(8))…" }
+            if let docId { return "doc: \(docId.prefix(8))…" }
+            return job.filename
         case .failed(let msg):
             return msg
         }

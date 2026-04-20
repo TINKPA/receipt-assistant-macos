@@ -1,4 +1,5 @@
 import Darwin
+import Darwin
 import SwiftUI
 
 @main
@@ -15,6 +16,12 @@ struct ReceiptAssistantApp: App {
                 .environmentObject(uploads)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 700)
+                .task {
+                    if ProcessInfo.processInfo.environment["RUN_SMOKE_TEST"] == "1" {
+                        await smokeTestGeneratedClient()
+                        exit(0)
+                    }
+                }
                 .task {
                     if ProcessInfo.processInfo.environment["RUN_SMOKE_TEST"] == "1" {
                         await smokeTestGeneratedClient()
