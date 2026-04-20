@@ -4,58 +4,74 @@ import Charts
 struct MonthlyReviewView: View {
     @EnvironmentObject var store: ReceiptStore
 
-    private var thisMonth: [Receipt] {
+    private var thisMonthKey: String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM"
-        let key = f.string(from: Date())
-        return store.receipts.filter { $0.date.hasPrefix(key) }
+        return f.string(from: Date())
     }
 
-    private var lastMonth: [Receipt] {
+    private var lastMonthKey: String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM"
-        let cal = Calendar.current
-        let prev = cal.date(byAdding: .month, value: -1, to: Date()) ?? Date()
-        let key = f.string(from: prev)
-        return store.receipts.filter { $0.date.hasPrefix(key) }
+        let prev = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+        return f.string(from: prev)
+    }
+
+    private var thisMonth: [Transaction] {
+        store.transactions.filter { $0.occurredOn.hasPrefix(thisMonthKey) }
+    }
+
+    private var lastMonth: [Transaction] {
+        store.transactions.filter { $0.occurredOn.hasPrefix(lastMonthKey) }
     }
 
     private struct WeekBucket: Identifiable {
         let id = UUID()
         let week: Int
-        let total: Double
+        let totalMinor: Int
     }
 
     private var weeks: [WeekBucket] {
         let cal = Calendar.current
-        var buckets: [Int: Double] = [:]
-        for r in thisMonth {
-            guard let d = r.date.asDate else { continue }
+        var buckets: [Int: Int] = [:]
+        for t in thisMonth {
+            guard let d = t.occurredOn.asDate else { continue }
             let w = cal.component(.weekOfMonth, from: d)
-            buckets[w, default: 0] += r.total
+            buckets[w, default: 0] += t.headlineAmountMinor
         }
-        return buckets.keys.sorted().map { WeekBucket(week: $0, total: buckets[$0]!) }
+        return buckets.keys.sorted().map { WeekBucket(week: $0, totalMinor: buckets[$0]!) }
     }
 
     private struct Compare: Identifiable {
         let id = UUID()
-        let category: String
-        let this: Double
-        let last: Double
-        var delta: Double { last == 0 ? 0 : (this - last) / last }
+        let payee: String
+        let thisMinor: Int
+        let lastMinor: Int
+        var delta: Double {
+            lastMinor == 0 ? 0 : Double(thisMinor - lastMinor) / Double(lastMinor)
+        }
     }
 
     private var comparison: [Compare] {
-        let groupThis = Dictionary(grouping: thisMonth, by: { $0.category.displayName })
-            .mapValues { $0.reduce(0) { $0 + $1.total } }
-        let groupLast = Dictionary(grouping: lastMonth, by: { $0.category.displayName })
-            .mapValues { $0.reduce(0) { $0 + $1.total } }
+        let groupThis = Dictionary(grouping: thisMonth, by: { $0.displayPayee })
+            .mapValues { $0.reduce(0) { $0 + $1.headlineAmountMinor } }
+        let groupLast = Dictionary(grouping: lastMonth, by: { $0.displayPayee })
+            .mapValues { $0.reduce(0) { $0 + $1.headlineAmountMinor } }
         let keys = Set(groupThis.keys).union(groupLast.keys)
-        return keys.sorted().map { Compare(category: $0, this: groupThis[$0] ?? 0, last: groupLast[$0] ?? 0) }
+        return keys.sorted().map {
+            Compare(payee: $0,
+                    thisMinor: groupThis[$0] ?? 0,
+                    lastMinor: groupLast[$0] ?? 0)
+        }
+    }
+
+    private var currency: String {
+        store.summary?.currency ?? "USD"
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Spent this month: \(thisMonth.reduce(0) { $0 + $1.total }.currency())")
+                let monthTotal = thisMonth.reduce(0) { $0 + $1.headlineAmountMinor }
+                Text("Spent this month: \(monthTotal.currencyFromMinor(currency))")
                     .font(.title2.weight(.semibold))
 
                 card("Weekly Breakdown") {
@@ -64,22 +80,22 @@ struct MonthlyReviewView: View {
                     } else {
                         Chart(weeks) { w in
                             BarMark(x: .value("Week", "W\(w.week)"),
-                                    y: .value("Total", w.total))
+                                    y: .value("Total", w.totalMinor))
                         }
                         .frame(height: 220)
                     }
                 }
 
-                card("vs Last Month") {
+                card("vs Last Month (by Payee)") {
                     if comparison.isEmpty {
                         Text("No comparison available").foregroundStyle(.secondary)
                     } else {
                         VStack(spacing: 6) {
                             ForEach(comparison) { c in
                                 HStack {
-                                    Text(c.category)
+                                    Text(c.payee).lineLimit(1)
                                     Spacer()
-                                    Text(c.this.currency()).foregroundStyle(.primary)
+                                    Text(c.thisMinor.currencyFromMinor(currency))
                                     Text(String(format: "%+.0f%%", c.delta * 100))
                                         .foregroundStyle(abs(c.delta) > 0.2 ? .orange : .secondary)
                                         .frame(width: 70, alignment: .trailing)

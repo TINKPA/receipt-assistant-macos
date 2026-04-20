@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Receipt Assistant API",
-    "version": "1.0.0",
-    "description": "REST API for uploading receipts, polling extraction jobs, and querying spending. All endpoints accept an optional Bearer token (configured via AUTH_TOKEN env)."
+    "version": "2.0.0-alpha",
+    "description": "Double-entry ledger backend. The v1 resources (transactions, postings, accounts, documents) are under active construction — see issues #33 (schema), #35 (transactions API), #36 (accounts API)."
   },
   "servers": [
     {
@@ -90,206 +90,452 @@
           "version"
         ]
       },
-      "ExtractionMeta": {
-        "type": [
-          "object",
-          "null"
-        ],
+      "Violation": {
+        "type": "object",
         "properties": {
-          "quality": {
-            "type": "object",
-            "properties": {
-              "confidence_score": {
-                "type": "number"
-              },
-              "missing_fields": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "warnings": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "confidence_score",
-              "missing_fields",
-              "warnings"
-            ]
+          "path": {
+            "type": "string"
           },
-          "business": {
-            "type": "object",
-            "properties": {
-              "is_reimbursable": {
-                "type": "boolean"
-              },
-              "is_tax_deductible": {
-                "type": "boolean"
-              },
-              "is_recurring": {
-                "type": "boolean"
-              },
-              "is_split_bill": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "is_reimbursable",
-              "is_tax_deductible",
-              "is_recurring",
-              "is_split_bill"
-            ]
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
           }
         },
         "required": [
-          "quality",
-          "business"
+          "path",
+          "code"
         ]
       },
-      "Receipt": {
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Violation"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ]
+      },
+      "Account": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
-          },
-          "merchant": {
-            "type": "string"
-          },
-          "date": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-            "description": "ISO date YYYY-MM-DD",
-            "example": "2026-04-19"
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
           },
-          "total": {
-            "type": "number"
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
           },
-          "currency": {
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "code": {
             "type": [
               "string",
               "null"
             ]
           },
-          "category": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "name": {
+            "type": "string",
+            "minLength": 1
           },
-          "payment_method": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tax": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "tip": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "notes": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "raw_text": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "image_path": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "address": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "latitude": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "longitude": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "place_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
+          "type": {
             "type": "string",
             "enum": [
-              "processing",
-              "done",
-              "error"
+              "asset",
+              "liability",
+              "equity",
+              "income",
+              "expense"
             ]
           },
-          "extraction_meta": {
-            "$ref": "#/components/schemas/ExtractionMeta"
+          "subtype": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "institution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opening_balance_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {},
+            "description": "User-defined JSON object; not schema-validated."
+          },
+          "version": {
+            "type": "integer"
           },
           "created_at": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "parent_id",
+          "code",
+          "name",
+          "type",
+          "subtype",
+          "currency",
+          "institution",
+          "last4",
+          "opening_balance_minor",
+          "closed_at",
+          "version",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "properties": {
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "asset",
+              "liability",
+              "equity",
+              "income",
+              "expense"
+            ]
+          },
+          "subtype": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "institution": {
+            "type": "string"
+          },
+          "last4": {
+            "type": "string"
+          },
+          "opening_balance_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {},
+            "description": "User-defined JSON object; not schema-validated."
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "UpdateAccountRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "subtype": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "institution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {},
+            "description": "User-defined JSON object; not schema-validated."
+          }
+        }
+      },
+      "AccountBalance": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "balance_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "posting_count": {
+            "type": "integer"
+          },
+          "includes_children": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "account_id",
+          "as_of",
+          "balance_minor",
+          "currency",
+          "posting_count",
+          "includes_children"
+        ]
+      },
+      "RegisterCounterPosting": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "name": {
+            "type": "string"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          }
+        },
+        "required": [
+          "account_id",
+          "name",
+          "amount_minor"
+        ]
+      },
+      "RegisterDocumentRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "kind": {
             "type": "string"
           }
         },
         "required": [
           "id",
-          "merchant",
-          "date",
-          "total"
+          "kind"
         ]
       },
-      "ReceiptItem": {
+      "RegisterItem": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
+          "posting_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
           },
-          "quantity": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "transaction_version": {
+            "type": "integer"
+          },
+          "occurred_on": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "payee": {
             "type": [
-              "number",
+              "string",
               "null"
             ]
           },
-          "unit_price": {
+          "narration": {
             "type": [
-              "number",
+              "string",
               "null"
             ]
           },
-          "total_price": {
-            "type": [
-              "number",
-              "null"
-            ]
+          "amount_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
           },
-          "category": {
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "running_balance_after_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "counter_postings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegisterCounterPosting"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegisterDocumentRef"
+            }
+          }
+        },
+        "required": [
+          "posting_id",
+          "transaction_id",
+          "transaction_version",
+          "occurred_on",
+          "payee",
+          "narration",
+          "amount_minor",
+          "currency",
+          "running_balance_after_minor",
+          "counter_postings",
+          "documents"
+        ]
+      },
+      "AccountRegister": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegisterItem"
+            }
+          },
+          "next_cursor": {
             "type": [
               "string",
               "null"
@@ -297,184 +543,1662 @@
           }
         },
         "required": [
-          "name"
+          "account_id",
+          "items",
+          "next_cursor"
         ]
       },
-      "ReceiptWithItems": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Receipt"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "items": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ReceiptItem"
-                }
-              }
-            },
-            "required": [
-              "items"
-            ]
-          }
-        ]
-      },
-      "JobUploadResponse": {
+      "Posting": {
         "type": "object",
         "properties": {
-          "jobId": {
-            "type": "string"
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
           },
-          "receiptId": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "fx_rate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amount_base_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "memo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "transaction_id",
+          "account_id",
+          "amount_minor",
+          "currency",
+          "fx_rate",
+          "amount_base_minor",
+          "memo",
+          "created_at"
+        ]
+      },
+      "TransactionDocumentRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "kind": {
             "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ]
+      },
+      "Transaction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "occurred_on": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "occurred_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "payee": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "narration": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "type": "string",
             "enum": [
-              "processing"
+              "draft",
+              "posted",
+              "voided",
+              "reconciled",
+              "error"
             ]
           },
-          "stream": {
-            "type": "string",
-            "example": "/jobs/abc/stream"
+          "voided_by_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
           },
-          "poll": {
+          "source_ingest_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "trip_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {},
+            "description": "User-defined JSON object; not schema-validated."
+          },
+          "version": {
+            "type": "integer"
+          },
+          "created_at": {
             "type": "string",
-            "example": "/jobs/abc"
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "postings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Posting"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransactionDocumentRef"
+            }
           }
         },
         "required": [
-          "jobId",
-          "receiptId",
+          "id",
+          "workspace_id",
+          "occurred_on",
+          "occurred_at",
+          "payee",
+          "narration",
           "status",
-          "stream",
-          "poll"
+          "voided_by_id",
+          "source_ingest_id",
+          "trip_id",
+          "version",
+          "created_at",
+          "updated_at",
+          "postings",
+          "documents"
         ]
       },
-      "JobStatus": {
+      "BulkResultItem": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "body": {}
+        },
+        "required": [
+          "index",
+          "status"
+        ]
+      },
+      "BulkResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BulkResultItem"
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "Document": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "receipt_image",
+              "receipt_email",
+              "receipt_pdf",
+              "statement_pdf",
+              "other"
+            ]
+          },
+          "file_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "ocr_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "extraction_meta": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "source_ingest_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "kind",
+          "file_path",
+          "mime_type",
+          "sha256",
+          "ocr_text",
+          "extraction_meta",
+          "source_ingest_id",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "DocumentKind": {
+        "type": "string",
+        "enum": [
+          "receipt_image",
+          "receipt_email",
+          "receipt_pdf",
+          "statement_pdf",
+          "other"
+        ]
+      },
+      "UploadDocumentForm": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "receipt_image",
+              "receipt_email",
+              "receipt_pdf",
+              "statement_pdf",
+              "other"
+            ]
+          }
+        }
+      },
+      "CreateDocumentLinkRequest": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "BatchStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "processing",
+          "extracted",
+          "reconciling",
+          "reconciled",
+          "failed",
+          "reconcile_error"
+        ]
+      },
+      "BatchCounts": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "processing": {
+            "type": "integer"
+          },
+          "done": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "integer"
+          },
+          "unsupported": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "queued",
+          "processing",
+          "done",
+          "error",
+          "unsupported"
+        ]
+      },
+      "IngestStatus": {
         "type": "string",
         "enum": [
           "queued",
           "processing",
           "done",
-          "error"
+          "error",
+          "unsupported"
         ]
       },
-      "JobStatusResponse": {
+      "IngestClassification": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "receipt_image",
+          "receipt_email",
+          "receipt_pdf",
+          "statement_pdf",
+          "unsupported"
+        ]
+      },
+      "IngestProduced": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "receipt_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "default": []
+          },
+          "transaction_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "default": []
+          },
+          "document_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "default": []
+          }
+        }
+      },
+      "Ingest": {
         "type": "object",
         "properties": {
-          "jobId": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "batch_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "filename": {
             "type": "string"
           },
-          "receiptId": {
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file_path": {
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/JobStatus"
+            "$ref": "#/components/schemas/IngestStatus"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/IngestClassification"
+          },
+          "produced": {
+            "$ref": "#/components/schemas/IngestProduced"
           },
           "error": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           }
         },
         "required": [
-          "jobId",
-          "receiptId",
+          "id",
+          "workspace_id",
+          "batch_id",
+          "filename",
+          "mime_type",
+          "file_path",
           "status",
-          "error"
+          "classification",
+          "produced",
+          "error",
+          "created_at",
+          "completed_at"
         ]
       },
-      "SpendingSummaryItem": {
+      "Batch": {
         "type": "object",
         "properties": {
-          "category": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BatchStatus"
+          },
+          "file_count": {
+            "type": "integer"
+          },
+          "auto_reconcile": {
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/BatchCounts"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ingest"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "reconciled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "status",
+          "file_count",
+          "auto_reconcile",
+          "counts",
+          "items",
+          "created_at",
+          "completed_at",
+          "reconciled_at"
+        ]
+      },
+      "BatchSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BatchStatus"
+          },
+          "file_count": {
+            "type": "integer"
+          },
+          "auto_reconcile": {
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/BatchCounts"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "reconciled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "status",
+          "file_count",
+          "auto_reconcile",
+          "counts",
+          "created_at",
+          "completed_at",
+          "reconciled_at"
+        ]
+      },
+      "CreateBatchForm": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            }
+          },
+          "auto_reconcile": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "CreateBatchResponse": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BatchStatus"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ingestId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                },
+                "filename": {
+                  "type": "string"
+                },
+                "mime_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "ingestId",
+                "filename",
+                "mime_type"
+              ]
+            }
+          },
+          "poll": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "batchId",
+          "status",
+          "items",
+          "poll"
+        ]
+      },
+      "ReconcileScope": {
+        "type": "string",
+        "enum": [
+          "batch",
+          "batch_plus_recent_90d"
+        ],
+        "default": "batch"
+      },
+      "ReconcileKind": {
+        "type": "string",
+        "enum": [
+          "dedup",
+          "payment_link",
+          "trip_group",
+          "inventory"
+        ]
+      },
+      "ReconcileRequest": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/ReconcileScope"
+          },
+          "enable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconcileKind"
+            }
+          },
+          "auto_apply_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "default": 0.95
+          }
+        }
+      },
+      "ReconcileBatchStatus": {
+        "type": "string",
+        "enum": [
+          "extracted",
+          "reconciling",
+          "reconciled",
+          "reconcile_error"
+        ]
+      },
+      "ReconcileApplied": {
+        "type": "object",
+        "properties": {
+          "duplicates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "receiptId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                },
+                "duplicateOf": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                }
+              },
+              "required": [
+                "receiptId",
+                "duplicateOf"
+              ]
+            },
+            "default": []
+          },
+          "payment_links": {
+            "type": "array",
+            "items": {},
+            "default": []
+          },
+          "inventory": {
+            "type": "array",
+            "items": {},
+            "default": []
+          },
+          "proposals_total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proposals_total"
+        ]
+      },
+      "ReconcileProposalStatus": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "auto_applied",
+          "user_applied",
+          "rejected"
+        ]
+      },
+      "ReconcileProposal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ReconcileKind"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReconcileProposalStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "batch_id",
+          "kind",
+          "payload",
+          "score",
+          "status",
+          "created_at",
+          "resolved_at"
+        ]
+      },
+      "ReconcileResult": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReconcileBatchStatus"
+          },
+          "applied": {
+            "$ref": "#/components/schemas/ReconcileApplied"
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconcileProposal"
+            }
+          },
+          "poll": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "batchId",
+          "status",
+          "applied",
+          "proposals"
+        ]
+      },
+      "ApplyRequest": {
+        "type": "object",
+        "properties": {
+          "proposal_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "proposal_ids"
+        ]
+      },
+      "ApplyResult": {
+        "type": "object",
+        "properties": {
+          "applied": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "applied",
+          "skipped"
+        ]
+      },
+      "RejectRequest": {
+        "type": "object",
+        "properties": {
+          "proposal_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "minItems": 1
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_ids"
+        ]
+      },
+      "RejectResult": {
+        "type": "object",
+        "properties": {
+          "rejected": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "rejected",
+          "skipped"
+        ]
+      },
+      "SummaryItem": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "total_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "avg_per_txn_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          }
+        },
+        "required": [
+          "key",
+          "count",
+          "total_minor",
+          "avg_per_txn_minor"
+        ]
+      },
+      "SummaryReport": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "category",
+              "account",
+              "payee"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SummaryItem"
+            }
+          },
+          "grand_total_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "group_by",
+          "currency",
+          "items",
+          "grand_total_minor"
+        ]
+      },
+      "TrendsItem": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "total_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "total_minor",
+          "count"
+        ]
+      },
+      "TrendsBucket": {
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrendsItem"
+            }
+          },
+          "total_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          }
+        },
+        "required": [
+          "bucket",
+          "items",
+          "total_minor"
+        ]
+      },
+      "TrendsReport": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "month",
+              "year"
+            ]
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "category",
+              "total"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrendsBucket"
+            }
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "period",
+          "group_by",
+          "currency",
+          "buckets"
+        ]
+      },
+      "NetWorthAccount": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "asset",
+              "liability",
+              "equity",
+              "income",
+              "expense"
+            ]
+          },
+          "balance_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          }
+        },
+        "required": [
+          "account_id",
+          "name",
+          "type",
+          "balance_minor"
+        ]
+      },
+      "NetWorthReport": {
+        "type": "object",
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "assets_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "liabilities_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "equity_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "net_worth_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "by_account": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetWorthAccount"
+            }
+          }
+        },
+        "required": [
+          "as_of",
+          "currency",
+          "assets_minor",
+          "liabilities_minor",
+          "equity_minor",
+          "net_worth_minor",
+          "by_account"
+        ]
+      },
+      "CashflowBucket": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          },
+          "income_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "expense_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "net_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          }
+        },
+        "required": [
+          "month",
+          "income_minor",
+          "expense_minor",
+          "net_minor"
+        ]
+      },
+      "CashflowReport": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "income_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "expense_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "net_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashflowBucket"
+            }
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "currency",
+          "income_minor",
+          "expense_minor",
+          "net_minor",
+          "buckets"
+        ]
+      },
+      "NewPosting": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "fx_rate": {
+            "type": "string"
+          },
+          "amount_base_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "memo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "amount_minor"
+        ]
+      },
+      "CreateTransactionRequest": {
+        "type": "object",
+        "properties": {
+          "occurred_on": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payee": {
+            "type": "string"
+          },
+          "narration": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "posted",
+              "voided",
+              "reconciled",
+              "error"
+            ]
+          },
+          "postings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NewPosting"
+            },
+            "minItems": 2
+          },
+          "document_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            }
+          },
+          "trip_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {},
+            "description": "User-defined JSON object; not schema-validated."
+          }
+        },
+        "required": [
+          "occurred_on",
+          "postings"
+        ]
+      },
+      "UpdateTransactionRequest": {
+        "type": "object",
+        "properties": {
+          "occurred_on": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-04-19"
+          },
+          "occurred_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "payee": {
             "type": [
               "string",
               "null"
             ]
           },
-          "count": {
-            "type": "integer"
-          },
-          "total_spent": {
-            "type": "number"
-          },
-          "avg_per_receipt": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "category",
-          "count",
-          "total_spent",
-          "avg_per_receipt"
-        ]
-      },
-      "SpendingSummary": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/SpendingSummaryItem"
-        }
-      },
-      "AskRequest": {
-        "type": "object",
-        "properties": {
-          "question": {
-            "type": "string",
-            "example": "How much did I spend on groceries last month?"
-          }
-        },
-        "required": [
-          "question"
-        ]
-      },
-      "AskResponse": {
-        "type": "object",
-        "properties": {
-          "answer": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "answer"
-        ]
-      },
-      "UploadReceiptForm": {
-        "type": "object",
-        "properties": {
-          "image": {
-            "type": "string",
-            "format": "binary"
-          },
-          "notes": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "image"
-        ]
-      },
-      "DeleteReceiptResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "enum": [
-              true
+          "narration": {
+            "type": [
+              "string",
+              "null"
             ]
           },
-          "id": {
+          "trip_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {},
+            "description": "User-defined JSON object; not schema-validated."
+          }
+        }
+      },
+      "VoidTransactionRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
             "type": "string"
+          }
+        }
+      },
+      "BulkRequest": {
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "update"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                    },
+                    "if_match": {
+                      "type": "string"
+                    },
+                    "patch": {
+                      "$ref": "#/components/schemas/UpdateTransactionRequest"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id",
+                    "if_match",
+                    "patch"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "void"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                    },
+                    "if_match": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id",
+                    "if_match"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "reconcile"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+                    },
+                    "if_match": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id",
+                    "if_match"
+                  ]
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
           }
         },
         "required": [
-          "success",
-          "id"
+          "operations"
         ]
+      },
+      "UpdatePostingRequest": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "fx_rate": {
+            "type": "string"
+          },
+          "amount_base_minor": {
+            "type": "integer",
+            "description": "Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.",
+            "example": 14723
+          },
+          "memo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     "parameters": {}
@@ -500,137 +2224,306 @@
         }
       }
     },
-    "/receipt": {
-      "post": {
-        "summary": "Upload a receipt JPG and start async extraction",
+    "/v1/accounts": {
+      "get": {
+        "summary": "List accounts (tree by default, flat with ?flat=true)",
         "tags": [
-          "receipts"
+          "accounts"
         ],
-        "security": [
+        "parameters": [
           {
-            "bearerAuth": []
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "flat",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "include_closed",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account list (flat: array of Account; default: array of AccountTreeNode roots)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Account"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new account",
+        "tags": [
+          "accounts"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Parent account not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/{id}": {
+      "get": {
+        "summary": "Get one account",
+        "tags": [
+          "accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified (If-None-Match matched)"
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch account (rename / re-parent / close)",
+        "tags": [
+          "accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
-            "multipart/form-data": {
+            "application/merge-patch+json": {
               "schema": {
-                "$ref": "#/components/schemas/UploadReceiptForm"
+                "$ref": "#/components/schemas/UpdateAccountRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Job submitted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobUploadResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Missing or invalid image",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/jobs/{id}": {
-      "get": {
-        "summary": "Poll job status",
-        "tags": [
-          "jobs"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "example": "abc123"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Current job status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobStatusResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Job not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/jobs/{id}/stream": {
-      "get": {
-        "summary": "Server-Sent Events stream for job progress",
-        "description": "Emits `processing`, `done`, or `error` events. Connection closes after terminal event.",
-        "tags": [
-          "jobs"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "example": "abc123"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "SSE stream",
-            "content": {
-              "text/event-stream": {
+            "description": "Account updated",
+            "headers": {
+              "ETag": {
                 "schema": {
                   "type": "string"
                 }
               }
-            }
-          },
-          "404": {
-            "description": "Job not found",
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Version mismatch (If-Match)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition required (If-Match missing)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Hard-delete an unused account",
+        "tags": [
+          "accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Account has postings; soft-close instead",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Version mismatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition required (If-Match missing)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -638,18 +2531,102 @@
         }
       }
     },
-    "/receipts": {
+    "/v1/accounts/{id}/balance": {
       "get": {
-        "summary": "List receipts with optional filters",
+        "summary": "Account balance as of a date",
         "tags": [
-          "receipts"
+          "accounts"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-              "description": "ISO date YYYY-MM-DD",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "as_of",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "example": "USD"
+            },
+            "required": false,
+            "name": "currency",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "include_children",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountBalance"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/{id}/register": {
+      "get": {
+        "summary": "Register (checkbook view) with running balance",
+        "tags": [
+          "accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
               "example": "2026-04-19"
             },
             "required": false,
@@ -659,8 +2636,824 @@
           {
             "schema": {
               "type": "string",
+              "format": "date",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-              "description": "ISO date YYYY-MM-DD",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "include_voided",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated register",
+            "headers": {
+              "Link": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountRegister"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transactions": {
+      "post": {
+        "summary": "Create a transaction",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTransactionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Idempotency-Key required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List transactions",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "occurred_from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "occurred_to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "amount_min_minor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "amount_max_minor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": false,
+            "name": "account_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "payee_contains",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "posted",
+                "voided",
+                "reconciled",
+                "error"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": false,
+            "name": "trip_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "has_document",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": false,
+            "name": "source_ingest_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "occurred_on",
+                "amount",
+                "created_at"
+              ]
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "required": false,
+            "name": "order",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Transaction"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transactions/{id}": {
+      "get": {
+        "summary": "Get a transaction",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch transaction head fields",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTransactionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Version mismatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete draft/error transaction",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "409": {
+            "description": "Must void instead",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transactions/{id}/void": {
+      "post": {
+        "summary": "Void a posted transaction",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidTransactionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Mirror transaction created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transactions/{id}/reconcile": {
+      "post": {
+        "summary": "Reconcile a posted transaction",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transactions/bulk": {
+      "post": {
+        "summary": "Bulk update/void/reconcile",
+        "tags": [
+          "transactions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-op results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transactions/{id}/postings": {
+      "post": {
+        "summary": "Add a posting to a transaction",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPosting"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Posting added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Posting"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Imbalance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transactions/{tid}/postings/{pid}": {
+      "patch": {
+        "summary": "Update a posting",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "tid",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "pid",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePostingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Posting"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a posting",
+        "tags": [
+          "transactions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "tid",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "pid",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "422": {
+            "description": "Would leave <2 postings",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/postings": {
+      "get": {
+        "summary": "List postings",
+        "tags": [
+          "postings"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": false,
+            "name": "transaction_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": false,
+            "name": "account_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
               "example": "2026-04-19"
             },
             "required": false,
@@ -672,14 +3465,14 @@
               "type": "string"
             },
             "required": false,
-            "name": "category",
+            "name": "cursor",
             "in": "query"
           },
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": 0,
-              "example": 50
+              "minimum": 1,
+              "maximum": 500
             },
             "required": false,
             "name": "limit",
@@ -688,24 +3481,29 @@
         ],
         "responses": {
           "200": {
-            "description": "Receipts ordered by date desc",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Receipt"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid query parameter (e.g. malformed date, non-numeric limit)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Posting"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ]
                 }
               }
             }
@@ -713,17 +3511,18 @@
         }
       }
     },
-    "/receipt/{id}": {
+    "/v1/postings/{id}": {
       "get": {
-        "summary": "Get one receipt with line items",
+        "summary": "Get a posting",
         "tags": [
-          "receipts"
+          "postings"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "example": "abc123"
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
             },
             "required": true,
             "name": "id",
@@ -732,21 +3531,135 @@
         ],
         "responses": {
           "200": {
-            "description": "Receipt detail",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReceiptWithItems"
+                  "$ref": "#/components/schemas/Posting"
                 }
               }
             }
           },
           "404": {
-            "description": "Receipt not found",
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/documents": {
+      "post": {
+        "summary": "Upload a document (multipart, sha256 content-dedup)",
+        "tags": [
+          "documents"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadDocumentForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Duplicate upload detected — returns the existing document row",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Document created",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/documents/{id}": {
+      "get": {
+        "summary": "Get document metadata",
+        "tags": [
+          "documents"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched)"
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -754,15 +3667,16 @@
         }
       },
       "delete": {
-        "summary": "Delete a receipt (cascades to line items)",
+        "summary": "Hard-delete a document (only if it has no links)",
         "tags": [
-          "receipts"
+          "documents"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "example": "abc123"
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
             },
             "required": true,
             "name": "id",
@@ -770,22 +3684,25 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Deleted",
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeleteReceiptResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
           },
-          "404": {
-            "description": "Receipt not found",
+          "409": {
+            "description": "Document has links — unlink first",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -793,17 +3710,18 @@
         }
       }
     },
-    "/receipt/{id}/image": {
+    "/v1/documents/{id}/content": {
       "get": {
-        "summary": "Serve the original receipt image file",
+        "summary": "Stream document binary content",
         "tags": [
-          "receipts"
+          "documents"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "example": "abc123"
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
             },
             "required": true,
             "name": "id",
@@ -812,9 +3730,9 @@
         ],
         "responses": {
           "200": {
-            "description": "JPEG image bytes",
+            "description": "Raw file bytes",
             "content": {
-              "image/jpeg": {
+              "application/octet-stream": {
                 "schema": {
                   "type": "string",
                   "format": "binary"
@@ -823,11 +3741,11 @@
             }
           },
           "404": {
-            "description": "Image not found on disk or in DB",
+            "description": "Not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -835,18 +3753,668 @@
         }
       }
     },
-    "/summary": {
-      "get": {
-        "summary": "Spending summary grouped by category",
+    "/v1/documents/{id}/links": {
+      "post": {
+        "summary": "Link a document to a transaction (idempotent)",
         "tags": [
-          "analytics"
+          "documents"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDocumentLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Linked (or already linked — idempotent)"
+          },
+          "404": {
+            "description": "Document or transaction not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/documents/{id}/links/{txn_id}": {
+      "delete": {
+        "summary": "Unlink a document from a transaction",
+        "tags": [
+          "documents"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "txn_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unlinked"
+          },
+          "404": {
+            "description": "Link not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ingest/batch": {
+      "post": {
+        "summary": "Upload N files for agent classification + extraction. Returns 202 with per-file ingest ids.",
+        "tags": [
+          "ingest"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBatchForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Batch accepted — poll /v1/batches/:id for results",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No files / validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batches": {
+      "get": {
+        "summary": "List ingestion batches (most recent first)",
+        "tags": [
+          "ingest"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/BatchStatus"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated batch summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BatchSummary"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batches/{id}": {
+      "get": {
+        "summary": "Get one batch with all child ingests",
+        "tags": [
+          "ingest"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch + items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Batch"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batches/{id}/stream": {
+      "get": {
+        "summary": "Server-Sent Events stream of per-ingest + per-batch + reconcile events. Connects, sends a `hello` catch-up frame with current counts + status, then relays `job.*`, `batch.*`, and `reconcile.*` events as they fire. Closes on terminal status (reconciled / failed) or client disconnect.",
+        "tags": [
+          "ingest"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream. `event:` names: `hello`, `batch.status`, `job.started`, `job.done`, `job.error`, `batch.extracted`, `batch.failed`, `batch.reconciled`, `reconcile.started`, `reconcile.proposal`, `reconcile.done`.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE frames of the form `event: <name>\\ndata: <json>\\n\\n`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ingests": {
+      "get": {
+        "summary": "List ingests across batches",
+        "tags": [
+          "ingest"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": false,
+            "name": "batch_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/IngestStatus"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated ingests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Ingest"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ingests/{id}": {
+      "get": {
+        "summary": "Get one ingest with produced reverse-lookup",
+        "tags": [
+          "ingest"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ingest row",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ingest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ingest not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batches/{id}/reconcile": {
+      "post": {
+        "summary": "Run the reconcile pipeline over an extracted batch. Idempotent: a second call on a reconciled batch returns the stored result.",
+        "tags": [
+          "reconcile"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reconcile completed (or replayed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Batch is already mid-reconcile on another caller; response carries a `poll` URL to fetch the final result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Batch is not in a reconcilable state (still extracting, or entered reconcile_error).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch the latest reconcile result for a batch.",
+        "tags": [
+          "reconcile"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconcile snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batches/{id}/reconcile/apply": {
+      "post": {
+        "summary": "Apply one or more reconcile proposals. For dedup proposals this voids the duplicate via the ledger service.",
+        "tags": [
+          "reconcile"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-id apply/skip outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batches/{id}/reconcile/reject": {
+      "post": {
+        "summary": "Reject one or more reconcile proposals. Marks proposals as rejected with no ledger mutation.",
+        "tags": [
+          "reconcile"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "01HXY9F0ABCDEFGHJKMNPQRSTV"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-id reject/skip outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RejectResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reports/summary": {
+      "get": {
+        "summary": "Spend aggregated by category / account / payee",
+        "tags": [
+          "reports"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-              "description": "ISO date YYYY-MM-DD",
               "example": "2026-04-19"
             },
             "required": false,
@@ -856,32 +4424,55 @@
           {
             "schema": {
               "type": "string",
+              "format": "date",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-              "description": "ISO date YYYY-MM-DD",
               "example": "2026-04-19"
             },
             "required": false,
             "name": "to",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "category",
+                "account",
+                "payee"
+              ]
+            },
+            "required": false,
+            "name": "group_by",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "example": "USD"
+            },
+            "required": false,
+            "name": "currency",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "One row per category, ordered by total_spent desc",
+            "description": "Summary report",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SpendingSummary"
+                  "$ref": "#/components/schemas/SummaryReport"
                 }
               }
             }
           },
-          "400": {
-            "description": "Invalid query parameter (e.g. malformed date)",
+          "404": {
+            "description": "Workspace not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -889,48 +4480,204 @@
         }
       }
     },
-    "/ask": {
-      "post": {
-        "summary": "Free-form question answered by Claude over your receipts",
+    "/v1/reports/trends": {
+      "get": {
+        "summary": "Time-series trend (MoM / YoY) of expense spend",
         "tags": [
-          "analytics"
+          "reports"
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AskRequest"
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "month",
+                "year"
+              ]
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "category",
+                "total"
+              ]
+            },
+            "required": false,
+            "name": "group_by",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "example": "USD"
+            },
+            "required": false,
+            "name": "currency",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trends report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendsReport"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
               }
             }
           }
-        },
+        }
+      }
+    },
+    "/v1/reports/net_worth": {
+      "get": {
+        "summary": "Assets - liabilities at a point in time",
+        "tags": [
+          "reports"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "as_of",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "example": "USD"
+            },
+            "required": false,
+            "name": "currency",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Claude's answer",
+            "description": "Net worth report",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AskResponse"
+                  "$ref": "#/components/schemas/NetWorthReport"
                 }
               }
             }
           },
-          "400": {
-            "description": "Missing or invalid `question` field",
+          "404": {
+            "description": "Workspace not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reports/cashflow": {
+      "get": {
+        "summary": "Inflows vs outflows over a range, bucketed by month",
+        "tags": [
+          "reports"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-04-19"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "example": "USD"
+            },
+            "required": false,
+            "name": "currency",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cashflow report",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                  "$ref": "#/components/schemas/CashflowReport"
                 }
               }
             }
           },
-          "500": {
-            "description": "Server error",
+          "404": {
+            "description": "Workspace not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }

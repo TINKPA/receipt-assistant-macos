@@ -1,17 +1,30 @@
+//
+//  APIClient.swift
+//
+//  Thin facade over the swift-openapi-generator output (`Client`). Each
+//  method here unwraps the generated Operation Output enum into either a
+//  typed value or an APIError. Domain code (UploadService, ReceiptStore,
+//  views) talks to this facade — never to the generated Client directly —
+//  so the spec-driven method renames are absorbed in one place.
+//
+
 import Foundation
+import HTTPTypes
+import OpenAPIRuntime
+import OpenAPIURLSession
 
 enum APIError: LocalizedError {
-    case badResponse(Int, String)
-    case invalidURL
-    case decoding(Error)
+    case http(Int, String)
+    case decoding(String)
     case transport(Error)
+    case undocumented(Int)
 
     var errorDescription: String? {
         switch self {
-        case .badResponse(let code, let msg): return "HTTP \(code): \(msg)"
-        case .invalidURL: return "Invalid URL"
-        case .decoding(let e): return "Decode error: \(e.localizedDescription)"
+        case .http(let code, let msg): return "HTTP \(code): \(msg)"
+        case .decoding(let m): return "Decode error: \(m)"
         case .transport(let e): return "Network error: \(e.localizedDescription)"
+        case .undocumented(let c): return "Undocumented status \(c)"
         }
     }
 }
@@ -19,124 +32,154 @@ enum APIError: LocalizedError {
 @MainActor
 final class APIClient {
     private unowned let settings: AppSettings
-    private let session: URLSession
+    private let client: Client
 
-    init(settings: AppSettings, session: URLSession = .shared) {
+    init(settings: AppSettings) {
         self.settings = settings
-        self.session = session
+        // Snapshot token at init. Token rarely changes (Settings UI); to
+        // pick up a new token, restart the app. This avoids capturing the
+        // @MainActor AppSettings inside a Sendable middleware closure.
+        let tokenSnapshot = settings.bearerToken
+        let middlewares: [any ClientMiddleware] = [BearerTokenMiddleware(token: tokenSnapshot)]
+        self.client = Client(
+            serverURL: settings.baseURL,
+            transport: URLSessionTransport(),
+            middlewares: middlewares
+        )
     }
 
-    private func request(_ path: String, method: String = "GET", query: [String: String?] = [:]) throws -> URLRequest {
-        var comps = URLComponents(url: settings.baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
-        let items = query.compactMap { key, value -> URLQueryItem? in
-            guard let v = value, !v.isEmpty else { return nil }
-            return URLQueryItem(name: key, value: v)
-        }
-        if !items.isEmpty { comps?.queryItems = items }
-        guard let url = comps?.url else { throw APIError.invalidURL }
-        var req = URLRequest(url: url)
-        req.httpMethod = method
-        if let token = settings.bearerToken, !token.isEmpty {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        return req
-    }
+    // MARK: - Transactions
 
-    private func send<T: Decodable>(_ req: URLRequest, as: T.Type = T.self) async throws -> T {
-        do {
-            let (data, resp) = try await session.data(for: req)
-            guard let http = resp as? HTTPURLResponse else {
-                throw APIError.badResponse(0, "no response")
+    func listTransactions(limit: Int? = nil) async throws -> [Transaction] {
+        let out = try await client.getV1Transactions(.init(query: .init(limit: limit)))
+        switch out {
+        case .ok(let ok):
+            switch ok.body {
+            case .json(let payload): return payload.items
             }
-            guard (200..<300).contains(http.statusCode) else {
-                let msg = String(data: data, encoding: .utf8) ?? ""
-                throw APIError.badResponse(http.statusCode, msg)
-            }
-            do {
-                return try JSONDecoder().decode(T.self, from: data)
-            } catch {
-                throw APIError.decoding(error)
-            }
-        } catch let e as APIError {
-            throw e
-        } catch {
-            throw APIError.transport(error)
+        case .undocumented(let s, _):
+            throw APIError.undocumented(s)
         }
     }
 
-    // MARK: - Endpoints
-
-    func listReceipts(from: String? = nil, to: String? = nil, category: Category? = nil, limit: Int = 100) async throws -> [Receipt] {
-        let req = try request("/receipts", query: [
-            "from": from, "to": to,
-            "category": category?.rawValue,
-            "limit": String(limit)
-        ])
-        return try await send(req)
-    }
-
-    func getReceipt(_ id: String) async throws -> Receipt {
-        let req = try request("/receipt/\(id)")
-        return try await send(req)
-    }
-
-    func deleteReceipt(_ id: String) async throws {
-        let req = try request("/receipt/\(id)", method: "DELETE")
-        let (_, resp) = try await session.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw APIError.badResponse((resp as? HTTPURLResponse)?.statusCode ?? 0, "delete failed")
+    func getTransaction(_ id: String) async throws -> Transaction {
+        let out = try await client.getV1TransactionsId(.init(path: .init(id: id)))
+        switch out {
+        case .ok(let ok):
+            switch ok.body {
+            case .json(let txn): return txn
+            }
+        case .notModified:
+            throw APIError.http(304, "Not modified")
+        case .notFound:
+            throw APIError.http(404, "Not found")
+        case .undocumented(let s, _):
+            throw APIError.undocumented(s)
         }
     }
 
-    func summary(from: String? = nil, to: String? = nil) async throws -> [SpendingSummary] {
-        let req = try request("/summary", query: ["from": from, "to": to])
-        return try await send(req)
+    // NOTE: deleteTransaction / voidTransaction are deferred to a follow-up
+    // PR — both endpoints require an If-Match header carrying the
+    // transaction's ETag (optimistic concurrency). Surfacing version
+    // through the facade cleanly is its own design problem.
+
+    // MARK: - Reports
+
+    func summary(groupBy: Operations.GetV1ReportsSummary.Input.Query.GroupByPayload = .category)
+        async throws -> SummaryReport
+    {
+        let out = try await client.getV1ReportsSummary(.init(query: .init(groupBy: groupBy)))
+        switch out {
+        case .ok(let ok):
+            switch ok.body {
+            case .json(let report): return report
+            }
+        case .notFound:
+            throw APIError.http(404, "Report endpoint not found")
+        case .undocumented(let s, _):
+            throw APIError.undocumented(s)
+        }
     }
 
-    func job(_ id: String) async throws -> JobStatus {
-        let req = try request("/jobs/\(id)")
-        return try await send(req)
+    // MARK: - Ingest pipeline
+
+    /// Upload a single file as a one-item batch. Returns the batchId +
+    /// the singleton ingestId so callers can poll progress.
+    func uploadOne(imageData: Data, filename: String, mimeType: String = "image/jpeg")
+        async throws -> CreateBatchResponse
+    {
+        let filePart = OpenAPIRuntime.MultipartPart(
+            payload: Components.Schemas.CreateBatchForm.FilesPayload(
+                body: HTTPBody(imageData)
+            ),
+            filename: filename
+        )
+        let multipartBody: MultipartBody<Components.Schemas.CreateBatchForm> =
+            .init([.files(filePart)])
+        let body: Operations.PostV1IngestBatch.Input.Body = .multipartForm(multipartBody)
+
+        let out = try await client.postV1IngestBatch(.init(body: body))
+        switch out {
+        case .accepted(let acc):
+            switch acc.body {
+            case .json(let payload): return payload
+            }
+        case .unprocessableContent(let p):
+            switch p.body {
+            case .applicationProblemJson(let problem):
+                throw APIError.http(422, problem.title)
+            }
+        case .undocumented(let s, _):
+            throw APIError.undocumented(s)
+        }
     }
 
-    func imageURL(for receiptId: String) -> URL {
-        settings.baseURL.appendingPathComponent("/receipt/\(receiptId)/image")
+    func getIngest(_ id: String) async throws -> Ingest {
+        let out = try await client.getV1IngestsId(.init(path: .init(id: id)))
+        switch out {
+        case .ok(let ok):
+            switch ok.body {
+            case .json(let ingest): return ingest
+            }
+        case .notFound:
+            throw APIError.http(404, "Not found")
+        case .undocumented(let s, _):
+            throw APIError.undocumented(s)
+        }
+    }
+
+    // MARK: - Documents
+
+    /// Direct URL to fetch a document's binary content. Used for inline
+    /// image rendering — bypasses the generated client because we want the
+    /// raw URL for AsyncImage / NSImage(contentsOf:).
+    func documentContentURL(_ documentId: String) -> URL {
+        settings.baseURL
+            .appendingPathComponent("v1")
+            .appendingPathComponent("documents")
+            .appendingPathComponent(documentId)
+            .appendingPathComponent("content")
     }
 
     var authToken: String? { settings.bearerToken }
+}
 
-    func uploadReceipt(imageData: Data, filename: String, mimeType: String = "image/jpeg", notes: String? = nil) async throws -> UploadResponse {
-        var req = try request("/receipt", method: "POST")
-        let boundary = "Boundary-\(UUID().uuidString)"
-        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+// MARK: - Bearer token middleware
 
-        var body = Data()
-        func append(_ s: String) { body.append(s.data(using: .utf8)!) }
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"image\"; filename=\"\(filename)\"\r\n")
-        append("Content-Type: \(mimeType)\r\n\r\n")
-        body.append(imageData)
-        append("\r\n")
-        if let notes, !notes.isEmpty {
-            append("--\(boundary)\r\n")
-            append("Content-Disposition: form-data; name=\"notes\"\r\n\r\n")
-            append(notes)
-            append("\r\n")
+private struct BearerTokenMiddleware: ClientMiddleware {
+    let token: String?
+
+    func intercept(
+        _ request: HTTPRequest,
+        body: HTTPBody?,
+        baseURL: URL,
+        operationID: String,
+        next: @Sendable (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?)
+    ) async throws -> (HTTPResponse, HTTPBody?) {
+        var req = request
+        if let token, !token.isEmpty {
+            req.headerFields[.authorization] = "Bearer \(token)"
         }
-        append("--\(boundary)--\r\n")
-        req.httpBody = body
-
-        do {
-            let (data, resp) = try await session.upload(for: req, from: body)
-            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-                let msg = String(data: data, encoding: .utf8) ?? ""
-                throw APIError.badResponse(code, msg)
-            }
-            return try JSONDecoder().decode(UploadResponse.self, from: data)
-        } catch let e as APIError {
-            throw e
-        } catch {
-            throw APIError.transport(error)
-        }
+        return try await next(req, body, baseURL)
     }
 }

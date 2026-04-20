@@ -22,10 +22,10 @@ struct DashboardView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Total Spent").font(.subheadline).foregroundStyle(.secondary)
-            Text(store.totalSpent.currency())
+            Text(store.totalSpent.currency(store.summary?.currency ?? "USD"))
                 .font(.system(size: 48, weight: .bold, design: .rounded))
                 .foregroundStyle(.tint)
-            Text("\(store.receipts.count) receipts tracked")
+            Text("\(store.transactions.count) transactions tracked")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(24)
@@ -33,17 +33,25 @@ struct DashboardView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
+    private var summaryItems: [SummaryItem] {
+        store.summary?.items ?? []
+    }
+
+    private var summaryCurrency: String {
+        store.summary?.currency ?? "USD"
+    }
+
     private var categoryBar: some View {
         card(title: "Spending by Category") {
-            if store.summary.isEmpty {
+            if summaryItems.isEmpty {
                 emptyChart
             } else {
-                Chart(store.summary) { s in
+                Chart(summaryItems, id: \.key) { s in
                     BarMark(
-                        x: .value("Category", s.category),
-                        y: .value("Total", s.totalSpent)
+                        x: .value("Category", s.key),
+                        y: .value("Total", s.totalMinor)
                     )
-                    .foregroundStyle(by: .value("Category", s.category))
+                    .foregroundStyle(by: .value("Category", s.key))
                 }
                 .frame(height: 240)
             }
@@ -52,16 +60,16 @@ struct DashboardView: View {
 
     private var donut: some View {
         card(title: "Breakdown") {
-            if store.summary.isEmpty {
+            if summaryItems.isEmpty {
                 emptyChart
             } else {
-                Chart(store.summary) { s in
+                Chart(summaryItems, id: \.key) { s in
                     SectorMark(
-                        angle: .value("Total", s.totalSpent),
+                        angle: .value("Total", s.totalMinor),
                         innerRadius: .ratio(0.6),
                         angularInset: 1.5
                     )
-                    .foregroundStyle(by: .value("Category", s.category))
+                    .foregroundStyle(by: .value("Category", s.key))
                 }
                 .frame(height: 240)
             }
@@ -70,20 +78,21 @@ struct DashboardView: View {
 
     private var recent: some View {
         card(title: "Recent Activity") {
-            if store.recentReceipts.isEmpty {
-                EmptyStateView(symbol: "tray", title: "No receipts yet", subtitle: "Upload one to get started.")
+            if store.recentTransactions.isEmpty {
+                EmptyStateView(symbol: "tray", title: "No transactions yet",
+                               subtitle: "Upload a receipt to get started.")
                     .frame(height: 160)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(store.recentReceipts) { r in
+                    ForEach(store.recentTransactions, id: \.id) { t in
                         HStack(spacing: 12) {
-                            CategoryIcon(category: r.category)
+                            CategoryIcon(key: nil)
                             VStack(alignment: .leading) {
-                                Text(r.merchant).font(.body.weight(.medium))
-                                Text(r.date).font(.caption).foregroundStyle(.secondary)
+                                Text(t.displayPayee).font(.body.weight(.medium))
+                                Text(t.displayDate).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text(r.total.currency(r.currency))
+                            Text(t.headlineAmount.currency(t.primaryCurrency))
                                 .font(.body.weight(.semibold))
                         }
                         .padding(.vertical, 8)
